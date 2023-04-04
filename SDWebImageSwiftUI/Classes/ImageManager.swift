@@ -32,6 +32,7 @@ public final class ImageManager : ObservableObject {
     var successBlock: ((PlatformImage, Data?, SDImageCacheType) -> Void)?
     var failureBlock: ((Error) -> Void)?
     var progressBlock: ((Int, Int) -> Void)?
+    var previewBlock: ((_ completion: @escaping () -> Void) -> Void)?
     
     public init() {}
     
@@ -52,45 +53,59 @@ public final class ImageManager : ObservableObject {
         currentURL = url
         indicatorStatus.isLoading = true
         indicatorStatus.progress = 0
-        currentOperation = manager.loadImage(with: url, options: options, context: context, progress: { [weak self] (receivedSize, expectedSize, _) in
+        
+        let loadImageBlock = { [weak self] in
             guard let self = self else {
                 return
             }
-            let progress: Double
-            if (expectedSize > 0) {
-                progress = Double(receivedSize) / Double(expectedSize)
-            } else {
-                progress = 0
+            self.currentOperation = manager.loadImage(with: url, options: options, context: context, progress: { [weak self] (receivedSize, expectedSize, _) in
+                        guard let self = self else {
+                            return
+                        }
+                        let progress: Double
+                        if (expectedSize > 0) {
+                            progress = Double(receivedSize) / Double(expectedSize)
+                        } else {
+                            progress = 0
+                        }
+                        DispatchQueue.main.async {
+                            self.indicatorStatus.progress = progress
+                        }
+                        self.progressBlock?(receivedSize, expectedSize)
+                    }) { [weak self] (image, data, error, cacheType, finished, _) in
+                        guard let self = self else {
+                            return
+                        }
+                        if let error = error as? SDWebImageError, error.code == .cancelled {
+                            // Ignore user cancelled
+                            // There are race condition when quick scroll
+                            // Indicator modifier disapper and trigger `WebImage.body`
+                            // So previous View struct call `onDisappear` and cancel the currentOperation
+                            return
+                        }
+                        self.image = image
+                        self.error = error
+                        self.isIncremental = !finished
+                        if finished {
+                            self.imageData = data
+                            self.cacheType = cacheType
+                            self.indicatorStatus.isLoading = false
+                            self.indicatorStatus.progress = 1
+                            if let image = image {
+                                self.successBlock?(image, data, cacheType)
+                            } else {
+                                self.failureBlock?(error ?? NSError())
+                            }
+                        }
+                    }
+        }
+        
+        if let block = previewBlock {
+            block {
+                loadImageBlock()
             }
-            DispatchQueue.main.async {
-                self.indicatorStatus.progress = progress
-            }
-            self.progressBlock?(receivedSize, expectedSize)
-        }) { [weak self] (image, data, error, cacheType, finished, _) in
-            guard let self = self else {
-                return
-            }
-            if let error = error as? SDWebImageError, error.code == .cancelled {
-                // Ignore user cancelled
-                // There are race condition when quick scroll
-                // Indicator modifier disapper and trigger `WebImage.body`
-                // So previous View struct call `onDisappear` and cancel the currentOperation
-                return
-            }
-            self.image = image
-            self.error = error
-            self.isIncremental = !finished
-            if finished {
-                self.imageData = data
-                self.cacheType = cacheType
-                self.indicatorStatus.isLoading = false
-                self.indicatorStatus.progress = 1
-                if let image = image {
-                    self.successBlock?(image, data, cacheType)
-                } else {
-                    self.failureBlock?(error ?? NSError())
-                }
-            }
+        } else {
+            loadImageBlock()
         }
     }
     

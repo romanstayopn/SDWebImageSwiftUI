@@ -25,6 +25,7 @@ final class WebImageHandler: ObservableObject {
     @Published var successBlock: ((PlatformImage, Data?, SDImageCacheType) -> Void)?
     @Published var failureBlock: ((Error) -> Void)?
     @Published var progressBlock: ((Int, Int) -> Void)?
+    @Published var previewBlock: ((_ completion: @escaping () -> Void) -> Void)?
 }
 
 /// Configuration Binding Object, supports dynamic @State changes
@@ -198,6 +199,7 @@ public struct WebImage : View {
         self.imageManager.successBlock = self.imageHandler.successBlock
         self.imageManager.failureBlock = self.imageHandler.failureBlock
         self.imageManager.progressBlock = self.imageHandler.progressBlock
+        self.imageManager.previewBlock = self.imageHandler.previewBlock
         if imageModel.url != imageManager.currentURL {
             imageManager.cancel()
             imageManager.image = nil
@@ -366,6 +368,11 @@ extension WebImage {
     /// - Returns: A view that triggers `action` when this image load successes.
     public func onProgress(perform action: ((Int, Int) -> Void)? = nil) -> WebImage {
         self.imageHandler.progressBlock = action
+        return self
+    }
+    
+    public func onPreview(perform action: ((_ completion: @escaping () -> Void ) -> Void)? = nil) -> WebImage {
+        self.imageHandler.previewBlock = action
         return self
     }
 }
